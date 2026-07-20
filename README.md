@@ -24,6 +24,10 @@ Opt-in via environment variables (unset = upstream default):
 - **CDN asset host** — `CDN_HOST` serves compiled front-end assets from a CDN origin.
 - **OAuth consent guidance** — additional explanatory copy on the authorization screen.
 
+## Acknowledgements
+
+Thanks to [@wandy-dev](https://github.com/wandy-dev) for earlier work on this fork.
+
 ## License & trademark
 
 peachy is distributed under the [GNU AGPL v3](LICENSE), the same license as Mastodon. It is an independent fork and is **not affiliated with, sponsored by, or endorsed by Mastodon gGmbH**. "Mastodon" is a trademark of Mastodon gGmbH.
