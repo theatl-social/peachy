@@ -131,6 +131,9 @@ class User < ApplicationRecord
 
   attribute :external, :boolean, default: false
   attribute :bypass_registration_checks, :boolean, default: false
+  # Set by AppSignUpService for accounts created via a trusted OAuth app; these are
+  # pre-vetted by external signup software and stay approved regardless of registrations_mode.
+  attribute :trusted_signup, :boolean, default: false
   attribute :date_of_birth, :date
 
   def self.those_who_can(*any_of_privileges)
@@ -419,7 +422,7 @@ class User < ApplicationRecord
       if requires_approval?
         false
       else
-        open_registrations? || valid_bypassing_invitation? || external?
+        open_registrations? || valid_bypassing_invitation? || external? || trusted_signup
       end
     end
   end

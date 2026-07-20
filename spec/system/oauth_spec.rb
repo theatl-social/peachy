@@ -48,7 +48,7 @@ RSpec.describe 'Using OAuth from an external app' do
       expect(page).to redirect_to_callback_url
     end
 
-    context 'with theATL.social custom guidance text' do
+    context 'with custom guidance text' do
       it 'displays all four guidance paragraphs when translations exist' do
         subject
 

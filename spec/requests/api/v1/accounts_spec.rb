@@ -269,6 +269,14 @@ RSpec.describe '/api/v1/accounts' do
         expect(response).to have_http_status(200)
         expect(response.parsed_body[:access_token]).to_not be_blank
       end
+
+      it 'approves the trusted user despite closed registrations' do
+        subject
+
+        user = User.find_by(email: 'hello@world.tld')
+        expect(user).to_not be_nil
+        expect(user.approved?).to be true
+      end
     end
 
     context 'when trusted app creates account (confirmation token)' do

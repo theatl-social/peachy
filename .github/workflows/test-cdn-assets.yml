@@ -10,7 +10,6 @@ on:
   push:
     branches:
       - main
-      - forked-main
     paths:
       - 'vite.config.mts'
       - 'Dockerfile'

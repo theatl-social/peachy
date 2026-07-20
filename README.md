@@ -1,3 +1,35 @@
+# peachy
+
+**peachy** is a soft fork of [Mastodon](https://github.com/mastodon/mastodon) that tracks upstream releases closely and layers on a small set of deployment-oriented options. It currently follows upstream **v4.6.3**.
+
+The goal is to stay as close to `mastodon/mastodon` as possible: every customization is opt-in via an environment variable and falls back to stock Mastodon behavior when unset, which keeps upstream merges cheap.
+
+## Tracking upstream
+
+Upstream Mastodon is tracked as the `upstream` git remote:
+
+```
+git remote add upstream https://github.com/mastodon/mastodon.git
+```
+
+Releases are merged from upstream tags; the fork's version string carries a `-peachy-<date>` prerelease suffix.
+
+## What peachy changes
+
+Opt-in via environment variables (unset = upstream default):
+
+- **API sign-up gating** — `DISABLE_API_REGISTRATIONS` rejects public `POST /api/v1/accounts` requests; `TRUSTED_REGISTRATION_CLIENT_IDS` allow-lists OAuth apps that may still create accounts (e.g. an external sign-up service); `WEB_SIGNUP_URL` points rejected callers at a custom sign-up page.
+- **Configurable limits** — `STATUS_LENGTH_CHARS_LIMIT`, `NOTE_LENGTH_LIMIT`, `MAX_MEDIA_ATTACHMENTS`.
+- **Configurable rate limits** — the `THROTTLE_*` family exposes rack-attack limits.
+- **CDN asset host** — `CDN_HOST` serves compiled front-end assets from a CDN origin.
+- **OAuth consent guidance** — additional explanatory copy on the authorization screen.
+
+## License & trademark
+
+peachy is distributed under the [GNU AGPL v3](LICENSE), the same license as Mastodon. It is an independent fork and is **not affiliated with, sponsored by, or endorsed by Mastodon gGmbH**. "Mastodon" is a trademark of Mastodon gGmbH.
+
+---
+
 > [!NOTE]
 > Want to learn more about Mastodon?
 > Click below to find out more in a video.

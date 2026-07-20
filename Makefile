@@ -4,7 +4,7 @@ BUILDVERSION ?= latest
 DOCKERUSER ?= goeshere
 
 # Docker image versions (must match Dockerfile)
-RUBY_VERSION = 3.4.7
+RUBY_VERSION = 4.0.5
 NODE_VERSION = 24
 
 # Build and push targets

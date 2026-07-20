@@ -79,3 +79,17 @@ docker-compose.override.yml
 
 *storybook.log
 storybook-static
+
+# --- peachy fork: never publish ---
+# Local Claude Code config
+.claude/
+# Internal security reviews / incident notes
+security/
+# Default-ignore any env variant that could hold real secrets;
+# the upstream sample/dev files below stay tracked via negation.
+.env.*
+!.env.development
+!.env.test
+!.env.vagrant
+!.env*.sample
+!.env*.example
