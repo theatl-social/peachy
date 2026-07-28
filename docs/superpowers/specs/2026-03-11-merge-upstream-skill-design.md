@@ -1,12 +1,17 @@
 # Design: merge-upstream Claude Code Skill
 
 **Date:** 2026-03-11
-**Status:** Draft
+**Status:** Implemented
 **Location:** `.claude/skills/merge-upstream/SKILL.md`
+
+> Naming updated 2026-07-28 for the theconnector → peachy rebrand: the integration
+> branch is `main` (not `forked-main`), the prerelease string is `peachy-{date}` (not
+> `theatlsocial-{date}`), and the fork remote is `theatl-social/peachy`. The 2026-03-11
+> date above is the original design date and is left as-is.
 
 ## Overview
 
-A Claude Code skill that automates merging new upstream Mastodon releases into the theatl-social fork. Invoked with `/merge-upstream v{version}`. Automates mechanical steps, pauses at gates for human review, and embeds fork-specific conflict resolution knowledge.
+A Claude Code skill that automates merging new upstream Mastodon releases into the peachy fork. Invoked with `/merge-upstream v{version}`. Automates mechanical steps, pauses at gates for human review, and embeds fork-specific conflict resolution knowledge.
 
 ## Invocation
 
@@ -23,7 +28,7 @@ The skill file at `.claude/skills/merge-upstream/SKILL.md` uses YAML frontmatter
 ```yaml
 ---
 name: merge-upstream
-description: Merge an upstream Mastodon release into the theatl-social fork. Usage: /merge-upstream v{version}
+description: Merge an upstream Mastodon release into the peachy fork. Usage: /merge-upstream v{version}
 ---
 ```
 
@@ -38,7 +43,7 @@ description: Merge an upstream Mastodon release into the theatl-social fork. Usa
 - Run `git fetch upstream --tags`
 - Confirm the tag exists in upstream
 - Check working tree is clean (`git status --porcelain` is empty)
-- Confirm current branch is `forked-main`. If not, **stop and ask the user to switch** — do not auto-switch, as the user may have in-progress work on the current branch
+- Confirm current branch is `main`. If not, **stop and ask the user to switch** — do not auto-switch, as the user may have in-progress work on the current branch
 
 **Gate:** Auto-proceed if all checks pass. Stop and report on any failure.
 
@@ -61,7 +66,7 @@ description: Merge an upstream Mastodon release into the theatl-social fork. Usa
 
 | File                        | Strategy                                                                                                                                                                                            |
 | --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `lib/mastodon/version.rb`   | Take upstream `major`/`minor`/`patch`, set `default_prerelease` to `'theatlsocial-{date}'` (see Version Bump Logic)                                                                                 |
+| `lib/mastodon/version.rb`   | Take upstream `major`/`minor`/`patch`, set `default_prerelease` to `'peachy-{date}'` (see Version Bump Logic)                                                                                 |
 | `vite.config.mts`           | Keep fork's CDN_HOST additions, accept upstream structural changes                                                                                                                                  |
 | `Gemfile.lock`, `yarn.lock` | Accept upstream version (`git checkout --theirs`). Lock file regeneration is a human post-step if the fork's Gemfile/package.json diverges — run inside the Docker dev container, never on the host |
 | `package.json`              | Take upstream (fork has no custom dependencies)                                                                                                                                                     |
@@ -97,7 +102,7 @@ description: Merge an upstream Mastodon release into the theatl-social fork. Usa
 **Actions (automated with confirmation):**
 
 - Push branch to origin
-- Create PR to `forked-main` with structured body (see PR Template below)
+- Create PR to `main` with structured body (see PR Template below)
 
 **Gate:** Confirm before creating PR.
 
@@ -105,7 +110,7 @@ description: Merge an upstream Mastodon release into the theatl-social fork. Usa
 
 1. Wait for CI to pass on the PR
 2. Merge the PR
-3. Tag the merge commit: `v{version}-theatlsocial-{date}`
+3. Tag the merge commit: `v{version}-peachy-{date}`
 
 ## Version Bump Logic
 
@@ -114,7 +119,7 @@ Update `lib/mastodon/version.rb` — all three version components must be update
 - `major` → match upstream release major
 - `minor` → match upstream release minor
 - `patch` → match upstream release patch
-- `default_prerelease` → `'theatlsocial-{date}'` where `{date}` is `YYYYMMDD` of the merge day
+- `default_prerelease` → `'peachy-{date}'` where `{date}` is `YYYYMMDD` of the merge day
 
 Example for `v4.6.0` merged on 2026-03-15:
 
@@ -132,7 +137,7 @@ def patch
 end
 
 def default_prerelease
-  'theatlsocial-20260315'
+  'peachy-20260315'
 end
 ```
 
@@ -145,8 +150,8 @@ end
 ```markdown
 ## Summary
 
-- Merge upstream Mastodon v{version} into forked-main
-- Updated fork version to {version}-theatlsocial-{date}
+- Merge upstream Mastodon v{version} into main
+- Updated fork version to {version}-peachy-{date}
 
 ## Upstream changelog
 
@@ -166,7 +171,7 @@ end
 
 ## Post-merge
 
-- Tag as `v{version}-theatlsocial-{date}` after CI passes
+- Tag as `v{version}-peachy-{date}` after CI passes
 ```
 
 Where `{date}` is the merge day in `YYYYMMDD` format.
@@ -174,6 +179,6 @@ Where `{date}` is the merge day in `YYYYMMDD` format.
 ## Key Constraints
 
 - **Never run Ruby tooling directly** — always use `bin/docker-rubocop`, `bin/docker-haml-lint`
-- **Push via HTTPS** if SSH fails: `git push https://github.com/theatl-social/theconnector.git`
+- **Push via HTTPS** if SSH fails: `git push https://github.com/theatl-social/peachy.git`
 - **Pre-commit hooks** use husky + lint-staged; avoid `--no-verify`
 - **Fork uses `@rails/ujs`** not `delegated-events` — verify this isn't re-introduced
