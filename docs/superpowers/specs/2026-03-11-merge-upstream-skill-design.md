@@ -66,7 +66,7 @@ description: Merge an upstream Mastodon release into the peachy fork. Usage: /me
 
 | File                        | Strategy                                                                                                                                                                                            |
 | --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `lib/mastodon/version.rb`   | Take upstream `major`/`minor`/`patch`, set `default_prerelease` to `'peachy-{date}'` (see Version Bump Logic)                                                                                 |
+| `lib/mastodon/version.rb`   | Take upstream `major`/`minor`/`patch`, set `default_prerelease` to `'peachy-{date}'` (see Version Bump Logic)                                                                                       |
 | `vite.config.mts`           | Keep fork's CDN_HOST additions, accept upstream structural changes                                                                                                                                  |
 | `Gemfile.lock`, `yarn.lock` | Accept upstream version (`git checkout --theirs`). Lock file regeneration is a human post-step if the fork's Gemfile/package.json diverges — run inside the Docker dev container, never on the host |
 | `package.json`              | Take upstream (fork has no custom dependencies)                                                                                                                                                     |
