@@ -11,11 +11,12 @@ Merge a specific upstream Mastodon release tag into the peachy fork (`main`).
 - **upstream**: `https://github.com/mastodon/mastodon.git`
 
 `main` is the integration branch **and** the repo's GitHub default branch (verify with
-`gh api repos/theatl-social/peachy -q .default_branch`). Two local signals lie about this:
-the stale `origin/HEAD -> origin/merge-v4.6.3` symref, and Claude Code's session-start
-summary, which may report `merge-v4.6.3` as the main branch. Both are heuristics; trust
-`gh api`. The older `forked-main` branch is dormant (last touched 2026-05-20) — do not
-target it.
+`gh api repos/theatl-social/peachy -q .default_branch`). Two local signals can lie about
+this: the `origin/HEAD` symref, which is cached at clone time and is **not** refreshed by
+`git fetch` (repair with `git remote set-head origin -a`), and Claude Code's session-start
+summary, which derives the main branch heuristically. Both once reported `merge-v4.6.3`
+here. Trust `gh api`. The older `forked-main` branch is dormant (last touched 2026-05-20)
+— do not target it.
 
 **Usage:** `/merge-upstream v4.5.7`
 
@@ -174,33 +175,59 @@ grep -A2 'def default_prerelease' lib/mastodon/version.rb
 
 Confirm the version string will produce `X.Y.Z-peachy-YYYYMMDD`.
 
-### 3.2 Rubocop
+### 3.2 / 3.3 Ruby linting — usually CI's job, not yours
+
+**Read this before running either wrapper.** Both `bin/docker-rubocop` and
+`bin/docker-haml-lint` execute inside the `theconnector-dev` image. Any merge that
+changes `Gemfile.lock` makes that image stale, and bundler then fails with:
+
+```
+Could not find <gem> ... in locally installed gems (Bundler::GemNotFound)
+```
+
+The missing gems will be exactly the ones the merge bumped — that signature confirms a
+stale image rather than a code fault. The fix is normally to rebuild the image, **but it
+does not build on Apple Silicon arm64**, so on that hardware there is no local remedy.
+
+Therefore: **if the merge changed `Gemfile.lock`, do not chase these locally.** Record
+3.2 and 3.3 as not-run-locally, say why in the PR, and let CI run them — it lints the
+same code on a supported architecture. Note that CI runs `bin/rubocop --format github`
+(a bundler binstub), which is not the same invocation as the wrapper's explicit
+`--config`, so the two can disagree on a handful of upstream files. **CI is the
+authority.**
+
+Expect `git commit` to need `--no-verify` in this situation: the husky pre-commit hook
+runs `yarn lint-staged`, which routes Ruby files through that same container. State the
+reason in the commit message — do not bypass silently.
+
+If `Gemfile.lock` did **not** change, run them normally:
 
 ```bash
 bin/docker-rubocop
-```
-
-**CRITICAL:** Never run `rubocop` directly — always use the containerized wrapper.
-
-On failure: report the errors to the user. Do **not** auto-fix with `--autocorrect`. Let the user decide how to proceed.
-
-### 3.3 HAML Lint
-
-```bash
 bin/docker-haml-lint
 ```
 
-**CRITICAL:** Never run `haml-lint` directly — always use the containerized wrapper.
+**CRITICAL:** never run `rubocop` or `haml-lint` directly on the host — always use the
+wrappers. On failure, report the errors and let the user decide; do **not** auto-fix with
+`--autocorrect`.
 
-On failure: report errors, let the user decide.
+### 3.4 Frontend event-delegation dependency
 
-### 3.4 delegated-events check
+`delegated-events` is **expected** and must **not** be removed.
+
+Upstream commit `7dbb2ac79a` ("Remove rails delegate", mastodon#36835) migrated the
+codebase _from_ `@rails/ujs` _to_ `delegated-events`. It is imported by
+`app/javascript/mastodon/utils/links.ts`, `entrypoints/public.tsx`, and
+`entrypoints/admin.tsx`; deleting it breaks the build.
+
+An earlier version of this skill asserted the opposite — that the fork used `@rails/ujs`
+and that any `delegated-events` occurrence had been re-introduced by upstream and should
+be stripped. That was true before mastodon#36835 and is now inverted. The check to run,
+if any, is the reverse:
 
 ```bash
-grep -r 'delegated-events' package.json yarn.lock
+grep -c '@rails/ujs' package.json   # expect 0
 ```
-
-This must return no results. The fork uses `@rails/ujs` instead of `delegated-events`. If found, it was re-introduced by the upstream merge and must be removed.
 
 ### 3.5 Year-boundary reminder
 
@@ -249,7 +276,7 @@ $CONFLICT_SUMMARY
 - [x] rubocop passed
 - [x] haml-lint passed
 - [x] Version string correct
-- [x] No re-introduction of delegated-events
+- [x] `@rails/ujs` absent (`delegated-events` is expected — do not remove)
 - [ ] CI passes
 
 ## Post-merge
