@@ -92,7 +92,7 @@ description: Merge an upstream Mastodon release into the peachy fork. Usage: /me
   - On failure: report the errors to the user. Do **not** auto-fix — let the user decide whether to run `--autocorrect` or fix manually
 - Run `bin/docker-haml-lint` (containerized — never run haml-lint directly)
   - On failure: report errors, same approach as rubocop
-- Check that `delegated-events` hasn't been re-introduced in `package.json`
+- ~~Check that `delegated-events` hasn't been re-introduced in `package.json`~~ — **inverted as of upstream mastodon#36835**, which migrated _from_ `@rails/ujs` _to_ `delegated-events`. The dependency is now expected; check `@rails/ujs` is absent instead
 - Remind user to check `annual_reports_spec.rb` if merging near a year boundary (Dec/Jan) — look for hardcoded year literals
 
 **Gate:** Pause. Report results (pass/fail for each check), ask user to proceed.
@@ -166,7 +166,7 @@ end
 - [ ] rubocop passed
 - [ ] haml-lint passed
 - [ ] Version string correct
-- [ ] No re-introduction of delegated-events
+- [ ] `@rails/ujs` absent (`delegated-events` is expected — do not remove)
 - [ ] CI passes
 
 ## Post-merge
@@ -181,4 +181,5 @@ Where `{date}` is the merge day in `YYYYMMDD` format.
 - **Never run Ruby tooling directly** — always use `bin/docker-rubocop`, `bin/docker-haml-lint`
 - **Push via HTTPS** if SSH fails: `git push https://github.com/theatl-social/peachy.git`
 - **Pre-commit hooks** use husky + lint-staged; avoid `--no-verify`
-- **Fork uses `@rails/ujs`** not `delegated-events` — verify this isn't re-introduced
+- **Fork uses `delegated-events`** not `@rails/ujs` — reversed by upstream mastodon#36835; do not remove `delegated-events`
+- **Ruby lint wrappers depend on the `theconnector-dev` image**, which goes stale whenever a merge changes `Gemfile.lock` and cannot be rebuilt on Apple Silicon arm64 — delegate rubocop/haml-lint to CI in that case
