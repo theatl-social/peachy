@@ -18,6 +18,12 @@ fi
 # Convert absolute host paths to container-relative paths.
 # lint-staged passes absolute paths (e.g. /Users/.../app/views/foo.haml)
 # but inside the container the project is mounted at /app.
+#
+# The expansion below is "${args[@]+"${args[@]}"}" rather than "${args[@]}":
+# under `set -u`, expanding an empty array is an unbound-variable error, so the
+# plain form aborts whenever this script is called with no arguments (linting
+# the whole tree). lint-staged always passes paths, which is why that path went
+# unnoticed.
 args=()
 for arg in "$@"; do
   args+=("${arg#"$SCRIPT_DIR/"}")
@@ -27,4 +33,4 @@ exec docker run --rm \
   -v "$SCRIPT_DIR:/app" \
   -w /app \
   "$IMAGE_NAME" \
-  haml-lint "${args[@]}"
+  haml-lint "${args[@]+"${args[@]}"}"
