@@ -1,11 +1,21 @@
 ---
 name: merge-upstream
-description: Merge an upstream Mastodon release into the theatl-social fork. Usage: /merge-upstream v{version}
+description: Merge an upstream Mastodon release into the peachy fork. Usage: /merge-upstream v{version}
 ---
 
 # Merge Upstream Mastodon Release
 
-Merge a specific upstream Mastodon release tag into the theatl-social fork (`forked-main`).
+Merge a specific upstream Mastodon release tag into the peachy fork (`main`).
+
+- **origin**: `https://github.com/theatl-social/peachy.git` (the fork)
+- **upstream**: `https://github.com/mastodon/mastodon.git`
+
+`main` is the integration branch **and** the repo's GitHub default branch (verify with
+`gh api repos/theatl-social/peachy -q .default_branch`). Two local signals lie about this:
+the stale `origin/HEAD -> origin/merge-v4.6.3` symref, and Claude Code's session-start
+summary, which may report `merge-v4.6.3` as the main branch. Both are heuristics; trust
+`gh api`. The older `forked-main` branch is dormant (last touched 2026-05-20) — do not
+target it.
 
 **Usage:** `/merge-upstream v4.5.7`
 
@@ -32,8 +42,9 @@ git tag -l "$VERSION" | grep -q "$VERSION" || echo "FAIL: Tag $VERSION not found
 # 5. Working tree must be clean
 test -z "$(git status --porcelain)" || echo "FAIL: Working tree is dirty"
 
-# 6. Must be on forked-main
-test "$(git branch --show-current)" = "forked-main" || echo "FAIL: Not on forked-main. Please switch: git checkout forked-main"
+# 6. Must be on main (the integration branch — confirm, don't assume)
+test "$(gh api repos/theatl-social/peachy -q .default_branch)" = "main" || echo "WARN: Default branch is no longer main — stop and confirm the integration branch"
+test "$(git branch --show-current)" = "main" || echo "FAIL: Not on main. Please switch: git checkout main"
 ```
 
 If all checks pass, proceed automatically to Phase 1.
@@ -77,8 +88,8 @@ def patch
 end
 
 def default_prerelease
-  # Set to 'theatlsocial-YYYYMMDD' using today's date
-  'theatlsocial-YYYYMMDD'
+  # Set to 'peachy-YYYYMMDD' using today's date
+  'peachy-YYYYMMDD'
 end
 ```
 
@@ -161,7 +172,7 @@ grep -A2 'def patch' lib/mastodon/version.rb
 grep -A2 'def default_prerelease' lib/mastodon/version.rb
 ```
 
-Confirm the version string will produce `X.Y.Z-theatlsocial-YYYYMMDD`.
+Confirm the version string will produce `X.Y.Z-peachy-YYYYMMDD`.
 
 ### 3.2 Rubocop
 
@@ -212,7 +223,7 @@ git push -u origin "merge-$VERSION"
 If SSH fails, fall back to HTTPS:
 
 ```bash
-git push -u https://github.com/theatl-social/theconnector.git "merge-$VERSION"
+git push -u https://github.com/theatl-social/peachy.git "merge-$VERSION"
 ```
 
 ### 4.2 Create PR
@@ -221,11 +232,11 @@ git push -u https://github.com/theatl-social/theconnector.git "merge-$VERSION"
 
 ```bash
 gh pr create \
-  --base forked-main \
+  --base main \
   --title "Merge upstream Mastodon $VERSION" \
   --body "$(cat <<'PREOF'
 ## Summary
-- Merge upstream Mastodon $VERSION into forked-main
+- Merge upstream Mastodon $VERSION into main
 - Updated fork version to $VERSION_STRING
 
 ## Upstream changelog
@@ -250,8 +261,8 @@ PREOF
 Where:
 
 - `$VERSION` = the upstream tag (e.g., `v4.5.7`)
-- `$VERSION_STRING` = `4.5.7-theatlsocial-YYYYMMDD`
-- `$TAG_NAME` = `v4.5.7-theatlsocial-YYYYMMDD`
+- `$VERSION_STRING` = `4.5.7-peachy-YYYYMMDD`
+- `$TAG_NAME` = `v4.5.7-peachy-YYYYMMDD`
 - `$CONFLICT_SUMMARY` = bullet list of each conflicted file and how it was resolved
 
 ### 4.3 Post-PR reminders
@@ -260,9 +271,9 @@ After creating the PR, remind the user:
 
 1. Wait for CI to pass on the PR
 2. Review and merge the PR
-3. After merging, tag the merge commit on `forked-main`:
+3. After merging, tag the merge commit on `main`:
    ```bash
-   git checkout forked-main
+   git checkout main
    git pull
    git tag "$TAG_NAME"
    git push origin "$TAG_NAME"
