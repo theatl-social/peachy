@@ -34,11 +34,22 @@ jobs:
 
       - name: Generate version tag
         id: version
+        # INPUT_VERSION goes through env, not direct ${{ }} interpolation into the
+        # shell. Interpolating a workflow_dispatch input straight into run: lets
+        # anyone who can trigger the workflow inject shell commands, and the value
+        # additionally lands in GITHUB_OUTPUT and becomes a Docker tag.
+        env:
+          INPUT_VERSION: ${{ github.event.inputs.docker_image_version }}
         run: |
-          if [ -n "${{ github.event.inputs.docker_image_version }}" ]; then
-            echo "tag=${{ github.event.inputs.docker_image_version }}" >> $GITHUB_OUTPUT
+          if [ -n "$INPUT_VERSION" ]; then
+            # Constrain to the Docker tag grammar before it reaches a tag string
+            if ! printf '%s' "$INPUT_VERSION" | grep -qE '^[a-zA-Z0-9_][a-zA-Z0-9._-]{0,127}$'; then
+              echo "::error::docker_image_version is not a valid Docker tag: $INPUT_VERSION"
+              exit 1
+            fi
+            echo "tag=$INPUT_VERSION" >> "$GITHUB_OUTPUT"
           else
-            echo "tag=$(date +%Y%m%d)-$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+            echo "tag=$(date +%Y%m%d)-$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Login to Docker Hub

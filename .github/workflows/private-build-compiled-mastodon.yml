@@ -25,20 +25,73 @@ jobs:
           - linux/amd64
     steps:
       - name: Check secrets availability
+        # Checks every secret this workflow depends on, not just the registry
+        # credentials. The seven ARG_* values are mounted as BuildKit secrets and
+        # read in Dockerfile:380 as:
+        #     $(cat /run/secrets/ARG_SECRET_KEY_BASE 2>/dev/null || echo "")
+        # so a missing one does NOT fail the build — it silently yields an empty
+        # string and produces a green image whose assets were precompiled against
+        # an empty SECRET_KEY_BASE. Failing loudly here is the only thing standing
+        # between a typo'd secret name and a broken image being pushed.
+        env:
+          REPO: ${{ github.repository }}
+          DOCKER_HUB_USER_NAME: ${{ secrets.DOCKER_HUB_USER_NAME }}
+          DOCKER_HUB_ACCESS_TOKEN: ${{ secrets.DOCKER_HUB_ACCESS_TOKEN }}
+          ARG_SECRET_KEY_BASE: ${{ secrets.ARG_SECRET_KEY_BASE }}
+          ARG_OTP_SECRET: ${{ secrets.ARG_OTP_SECRET }}
+          ARG_VAPID_PRIVATE_KEY: ${{ secrets.ARG_VAPID_PRIVATE_KEY }}
+          ARG_VAPID_PUBLIC_KEY: ${{ secrets.ARG_VAPID_PUBLIC_KEY }}
+          ARG_ACTIVE_RECORD_ENCRYPTION_DETERMINISTIC_KEY: ${{ secrets.ARG_ACTIVE_RECORD_ENCRYPTION_DETERMINISTIC_KEY }}
+          ARG_ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT: ${{ secrets.ARG_ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT }}
+          ARG_ACTIVE_RECORD_ENCRYPTION_PRIMARY_KEY: ${{ secrets.ARG_ACTIVE_RECORD_ENCRYPTION_PRIMARY_KEY }}
         run: |
-          if [ -z "${{ secrets.DOCKER_HUB_USER_NAME }}" ]; then echo "DOCKER_HUB_USER_NAME is missing"; exit 1; fi
-          if [ -z "${{ secrets.DOCKER_HUB_ACCESS_TOKEN }}" ]; then echo "DOCKER_HUB_ACCESS_TOKEN is missing"; exit 1; fi
+          missing=0
+          for name in \
+            DOCKER_HUB_USER_NAME \
+            DOCKER_HUB_ACCESS_TOKEN \
+            ARG_SECRET_KEY_BASE \
+            ARG_OTP_SECRET \
+            ARG_VAPID_PRIVATE_KEY \
+            ARG_VAPID_PUBLIC_KEY \
+            ARG_ACTIVE_RECORD_ENCRYPTION_DETERMINISTIC_KEY \
+            ARG_ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT \
+            ARG_ACTIVE_RECORD_ENCRYPTION_PRIMARY_KEY \
+          ; do
+            if [ -z "${!name}" ]; then
+              echo "::error::$name is missing"
+              missing=$((missing + 1))
+            fi
+          done
+
+          if [ "$missing" -gt 0 ]; then
+            echo "$missing required secret(s) missing — refusing to build."
+            echo "Set them with: gh secret set <NAME> --repo $REPO"
+            exit 1
+          fi
+
+          echo "All 9 required secrets are present."
 
       - name: Checkout repository code
         uses: actions/checkout@v4
 
       - name: Generate version tag
         id: version
+        # INPUT_VERSION goes through env, not direct ${{ }} interpolation into the
+        # shell. Interpolating a workflow_dispatch input straight into run: lets
+        # anyone who can trigger the workflow inject shell commands, and the value
+        # additionally lands in GITHUB_OUTPUT and becomes a Docker tag.
+        env:
+          INPUT_VERSION: ${{ github.event.inputs.docker_image_version }}
         run: |
-          if [ -n "${{ github.event.inputs.docker_image_version }}" ]; then
-            echo "tag=${{ github.event.inputs.docker_image_version }}" >> $GITHUB_OUTPUT
+          if [ -n "$INPUT_VERSION" ]; then
+            # Constrain to the Docker tag grammar before it reaches a tag string
+            if ! printf '%s' "$INPUT_VERSION" | grep -qE '^[a-zA-Z0-9_][a-zA-Z0-9._-]{0,127}$'; then
+              echo "::error::docker_image_version is not a valid Docker tag: $INPUT_VERSION"
+              exit 1
+            fi
+            echo "tag=$INPUT_VERSION" >> "$GITHUB_OUTPUT"
           else
-            echo "tag=$(date +%Y%m%d)-$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+            echo "tag=$(date +%Y%m%d)-$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Login to Docker Hub
