@@ -17,7 +17,7 @@ module Mastodon
     end
 
     def default_prerelease
-      'peachy-20260728'
+      'peachy-20260812'
     end
 
     def prerelease
