@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+# Resolves the dev/lint container image, rebuilding it when it no longer matches
+# the dependency files in the tree. Prints the image name on stdout.
+#
+# Usage: IMAGE="$(bin/dev-image)"
+#
+# Why this exists: bin/docker-rubocop and bin/docker-haml-lint used to guard the
+# build with
+#
+#     if ! docker image inspect "$IMAGE_NAME" >/dev/null 2>&1; then docker build ...
+#
+# but `docker image inspect` succeeds on a *stale* image, so the rebuild only
+# fired when the image was absent — never when Gemfile.lock had moved underneath
+# it. Every upstream merge that bumped gems therefore left a working-looking
+# image that failed with
+#
+#     Could not find <gem> ... in locally installed gems (Bundler::GemNotFound)
+#
+# listing exactly the gems the merge had bumped. That signature was misread for
+# weeks as an architecture problem rather than a stale image.
+
+set -euo pipefail
+
+IMAGE_NAME="theconnector-dev"
+LABEL_KEY="dev.theconnector.inputs-hash"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+# Files whose contents determine what ends up installed in the image. Dockerfile.dev
+# COPYs Gemfile/Gemfile.lock/.ruby-version and runs bundle install against them, so a
+# change to any of these invalidates the image.
+INPUTS=(Dockerfile.dev Gemfile Gemfile.lock .ruby-version)
+
+# macOS ships shasum, most Linux images ship sha256sum. Support both rather than
+# assuming, since this runs on developer laptops and inside CI.
+sha256() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum
+  else
+    shasum -a 256
+  fi
+}
+
+want="$(cat "${INPUTS[@]/#/$ROOT/}" | sha256 | cut -c1-12)"
+
+# A missing image, or one built before this label existed, yields "" or "<no value>";
+# both are treated as a mismatch so the image gets rebuilt exactly once.
+have="$(docker image inspect "$IMAGE_NAME" \
+          --format "{{index .Config.Labels \"$LABEL_KEY\"}}" 2>/dev/null || true)"
+[ "$have" = "<no value>" ] && have=""
+
+if [ "$want" != "$have" ]; then
+  if [ -z "$have" ]; then
+    echo "Building dev image ($IMAGE_NAME, inputs $want)..." >&2
+  else
+    echo "Dev image is stale (image $have, tree $want) — rebuilding..." >&2
+  fi
+
+  # Build output goes to stderr so callers can capture the image name on stdout.
+  docker build \
+    -f "$ROOT/Dockerfile.dev" \
+    -t "$IMAGE_NAME" \
+    --label "$LABEL_KEY=$want" \
+    "$ROOT" >&2
+fi
+
+printf '%s\n' "$IMAGE_NAME"

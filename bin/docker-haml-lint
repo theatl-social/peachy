@@ -6,14 +6,12 @@
 
 set -euo pipefail
 
-IMAGE_NAME="theconnector-dev"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-# Build the dev image if it doesn't exist
-if ! docker image inspect "$IMAGE_NAME" >/dev/null 2>&1; then
-  echo "Building dev container ($IMAGE_NAME)..." >&2
-  docker build -f "$SCRIPT_DIR/Dockerfile.dev" -t "$IMAGE_NAME" "$SCRIPT_DIR" >&2
-fi
+# Resolve the dev image, rebuilding it if Gemfile.lock and friends have moved.
+# See bin/dev-image: the `docker image inspect` guard that used to live here
+# could only detect an absent image, never a stale one.
+IMAGE_NAME="$("$SCRIPT_DIR/bin/dev-image")"
 
 # Convert absolute host paths to container-relative paths.
 # lint-staged passes absolute paths (e.g. /Users/.../app/views/foo.haml)
