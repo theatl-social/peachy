@@ -111,6 +111,19 @@ jobs:
           platforms: linux/amd64
           push: true
           tags: ${{ secrets.DOCKER_HUB_USER_NAME }}/mastodon-compiled:${{ steps.version.outputs.tag }}
+          # CDN_HOST has to be supplied here as well as at run time, not instead
+          # of it. Vite bakes it into compiled CSS during asset precompilation,
+          # while Rails reads the ENV at boot for asset_host, the CSP allow-list
+          # and the <meta name="cdn-host"> tag. Setting it only at run time
+          # leaves CSS pointing at the origin it was compiled against.
+          #
+          # Sourced from a repository (or containerbuild environment) variable
+          # rather than a secret: it is a public hostname, and an unset variable
+          # resolves to an empty string, which is exactly the previous
+          # behaviour. Set it with:
+          #   gh variable set CDN_HOST --repo theatl-social/peachy --body https://cdn.example.com
+          build-args: |
+            CDN_HOST=${{ vars.CDN_HOST }}
           secrets: |
             "ARG_SECRET_KEY_BASE=${{ secrets.ARG_SECRET_KEY_BASE }}"
             "ARG_OTP_SECRET=${{ secrets.ARG_OTP_SECRET }}"
