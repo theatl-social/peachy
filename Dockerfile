@@ -51,11 +51,18 @@ ARG UID="991"
 ARG GID="991"
 
 # Apply Mastodon build options based on options above
+# CDN_HOST must be promoted to a runtime ENV, not just consumed at build time:
+# Rails reads it at boot to set `config.asset_host`, which drives the CSP
+# allow-list and the `<meta name="cdn-host">` tag the front-end reads for emoji,
+# sounds and OCR data. Without it here, a CDN build bakes CDN URLs into the
+# assets while the running app never learns about the CDN -- so the CSP omits
+# the CDN origin and the browser blocks the very assets it was pointed at.
 ENV \
   MASTODON_VERSION_PRERELEASE="${MASTODON_VERSION_PRERELEASE}" \
   MASTODON_VERSION_METADATA="${MASTODON_VERSION_METADATA}" \
   SOURCE_COMMIT="${SOURCE_COMMIT}" \
   RAILS_SERVE_STATIC_FILES="${RAILS_SERVE_STATIC_FILES}" \
+  CDN_HOST="${CDN_HOST}" \
   RUBY_YJIT_ENABLE="${RUBY_YJIT_ENABLE}" \
   TZ="${TZ}"
 

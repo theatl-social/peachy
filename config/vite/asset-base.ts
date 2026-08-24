@@ -1,0 +1,36 @@
+/* Resolving the CDN asset base lives in its own module rather than inline in
+   `vite.config.mts` so it can be reasoned about (and exercised) on its own: the
+   config factory is async and instantiates every plugin, which makes the one
+   line that actually decides asset URLs hard to see and harder to check.
+
+   Note that this only covers the *build-time* half of `CDN_HOST`. Vite bakes
+   this base into CSS `url()`, the JS chunk loader, `manifest.json` and the
+   service worker's chunk imports. The runtime half -- Rails' `asset_host`, the
+   CSP allow-list and the `<meta name="cdn-host">` tag the front-end reads -- is
+   driven separately from `ENV['CDN_HOST']` at boot. Both must be set to the
+   same value for a CDN deploy to be coherent. */
+
+export interface AssetBaseOptions {
+  cdnHost: string | undefined;
+  outDirName: string;
+  isProdBuild: boolean;
+}
+
+export function resolveAssetBase({
+  cdnHost,
+  outDirName,
+  isProdBuild,
+}: AssetBaseOptions): string {
+  const host = cdnHost?.trim();
+
+  // Only production builds emit absolute URLs. The dev server serves assets
+  // itself, so a CDN base there would point at stale (or absent) files.
+  if (!isProdBuild || !host) {
+    return `/${outDirName}/`;
+  }
+
+  // Vite concatenates `base` with asset paths, so a trailing slash on CDN_HOST
+  // would yield `https://cdn.example.com//packs/`. Most CDNs serve that, but it
+  // breaks cache keys and any exact-match origin rule.
+  return `${host.replace(/\/+$/, '')}/${outDirName}/`;
+}
