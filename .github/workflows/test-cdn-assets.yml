@@ -4,16 +4,20 @@ on:
   pull_request:
     paths:
       - 'vite.config.mts'
+      - 'config/vite/**'
       - 'Dockerfile'
       - 'app/javascript/**'
+      - 'spec/requests/cdn_host_spec.rb'
       - '.github/workflows/test-cdn-assets.yml'
   push:
     branches:
       - main
     paths:
       - 'vite.config.mts'
+      - 'config/vite/**'
       - 'Dockerfile'
       - 'app/javascript/**'
+      - 'spec/requests/cdn_host_spec.rb'
 
 jobs:
   test-cdn-manifest:
@@ -37,7 +41,9 @@ jobs:
 
       - name: Build assets with test CDN_HOST
         env:
-          CDN_HOST: https://cdn-test.example.com
+          # Deliberately trailing-slashed: resolveAssetBase must normalise this,
+          # otherwise every assertion below would need to expect `//packs/`.
+          CDN_HOST: https://cdn-test.example.com/
           RAILS_ENV: production
           NODE_ENV: production
           SECRET_KEY_BASE_DUMMY: '1'
@@ -336,6 +342,30 @@ jobs:
       # - Emoji SVG source files: Live in public/emoji/ and are served statically by Rails/Nginx
       # - Custom emoji data (emoji_map.json): May be embedded in bundles or loaded separately
 
+      - name: Verify CDN_HOST trailing slash is normalised
+        run: |
+          echo "🔍 Checking that a trailing-slashed CDN_HOST did not produce '//packs/'..."
+
+          # CDN_HOST is set to 'https://cdn-test.example.com/' for this job. Vite
+          # concatenates `base` with asset paths, so without normalisation every
+          # emitted URL would carry a doubled slash. Most CDNs still serve those,
+          # which is why this went unnoticed -- but it breaks cache keys and any
+          # exact-match origin rule.
+          offenders=$(grep -rho 'https://cdn-test\.example\.com//*[a-zA-Z0-9_-]*' \
+            public/packs/.vite/manifest.json public/packs 2>/dev/null \
+            | grep '//packs' | sort -u || true)
+
+          if [ -n "$offenders" ]; then
+            echo "❌ Found doubled slashes after the CDN host:"
+            echo "$offenders"
+            echo ""
+            echo "resolveAssetBase() in config/vite/asset-base.ts should strip"
+            echo "trailing slashes from CDN_HOST before joining the output dir."
+            exit 1
+          fi
+
+          echo "✅ CDN_HOST trailing slash normalised correctly"
+
       - name: Check for hardcoded /packs/ paths in TypeScript
         run: |
           echo "🔍 Scanning for hardcoded /packs/ paths in JavaScript/TypeScript..."
@@ -441,3 +471,80 @@ jobs:
 
           Result: All Vite-managed assets load from CDN automatically ✨
           "
+
+  test-cdn-runtime-env:
+    name: Verify CDN_HOST reaches container runtime
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+
+      # The regression this guards against: CDN_HOST used to be declared as a
+      # build ARG and consumed during asset precompilation, but was never
+      # promoted into the runtime ENV block. The resulting image baked CDN URLs
+      # into CSS/JS while Rails booted with `config.asset_host` unset -- so the
+      # CSP never allow-listed the CDN and the browser blocked the very assets
+      # the build had redirected there.
+      #
+      # Only the `ruby` stage is built: the ENV block lives there, and building
+      # the full image would cost many minutes for no extra coverage.
+      - name: Build the base stage with a CDN_HOST build arg
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          target: ruby
+          build-args: |
+            CDN_HOST=https://cdn-test.example.com
+          push: false
+          load: true
+          tags: peachy-cdn-env-check:latest
+
+      - name: Assert CDN_HOST is present in the image environment
+        run: |
+          echo "🔍 Inspecting runtime environment of the built image..."
+
+          env_value=$(docker image inspect peachy-cdn-env-check:latest \
+            --format '{{range .Config.Env}}{{println .}}{{end}}' \
+            | grep '^CDN_HOST=' || true)
+
+          if [ -z "$env_value" ]; then
+            echo "❌ CDN_HOST is not present in the image environment."
+            echo ""
+            echo "The Dockerfile consumed CDN_HOST at build time but never promoted"
+            echo "it to a runtime ENV. Rails reads ENV['CDN_HOST'] at boot to set"
+            echo "config.asset_host, which drives the CSP allow-list and the"
+            echo "<meta name=\"cdn-host\"> tag. Without it the CDN is only half"
+            echo "applied and the browser will block CDN-hosted assets."
+            echo ""
+            echo "Fix: add CDN_HOST=\"\${CDN_HOST}\" to the ENV block in Dockerfile."
+            exit 1
+          fi
+
+          echo "   $env_value"
+
+          if [ "$env_value" != "CDN_HOST=https://cdn-test.example.com" ]; then
+            echo "❌ CDN_HOST did not carry the build-arg value through."
+            exit 1
+          fi
+
+          echo "✅ CDN_HOST reaches the container runtime"
+
+      - name: Assert an unset CDN_HOST stays empty
+        run: |
+          echo "🔍 Verifying backward compatibility (no CDN_HOST build arg)..."
+
+          docker build --target ruby -t peachy-cdn-env-default:latest . >/dev/null
+
+          env_value=$(docker image inspect peachy-cdn-env-default:latest \
+            --format '{{range .Config.Env}}{{println .}}{{end}}' \
+            | grep '^CDN_HOST=' || true)
+
+          # The ARG defaults to "", so the key may be present but must be empty;
+          # Rails treats a blank value as "no CDN" via `.present?`.
+          if [ -n "$env_value" ] && [ "$env_value" != "CDN_HOST=" ]; then
+            echo "❌ Expected an empty CDN_HOST, got: $env_value"
+            exit 1
+          fi
+
+          echo "✅ Builds without CDN_HOST leave it unset"
