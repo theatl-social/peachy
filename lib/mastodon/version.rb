@@ -9,15 +9,15 @@ module Mastodon
     end
 
     def minor
-      6
+      7
     end
 
     def patch
-      6
+      0
     end
 
     def default_prerelease
-      'peachy-20260814'
+      'peachy-20260824'
     end
 
     def prerelease
