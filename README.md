@@ -21,7 +21,9 @@ Opt-in via environment variables (unset = upstream default):
 - **API sign-up gating** — `DISABLE_API_REGISTRATIONS` rejects public `POST /api/v1/accounts` requests; `TRUSTED_REGISTRATION_CLIENT_IDS` allow-lists OAuth apps that may still create accounts (e.g. an external sign-up service); `WEB_SIGNUP_URL` points rejected callers at a custom sign-up page.
 - **Configurable limits** — `STATUS_LENGTH_CHARS_LIMIT`, `NOTE_LENGTH_LIMIT`, `MAX_MEDIA_ATTACHMENTS`.
 - **Configurable rate limits** — the `THROTTLE_*` family exposes rack-attack limits.
-- **CDN asset host** — `CDN_HOST` serves compiled front-end assets from a CDN origin.
+- **CDN asset host** — `CDN_HOST` serves compiled front-end assets from a CDN origin. Two requirements are easy to miss, so the app checks for them at boot and logs `[CDN_HOST]` warnings:
+  - **It must be set at both build and run time, to the same value.** Vite bakes it into compiled CSS during asset precompilation, while Rails reads it at boot for `asset_host`, the CSP allow-list and the `<meta name="cdn-host">` tag. The container image carries the build value forward as an `ENV`, so a plain `docker build --build-arg CDN_HOST=…` is coherent; overriding it with `docker run -e CDN_HOST=…` is not, and will leave CSS pointing at the origin it was compiled against while the CSP allows only the new one.
+  - **The CDN must send `Access-Control-Allow-Origin` for the asset path.** The service worker is registered as a module worker, so its chunk imports are fetched with CORS. Without the header the worker fails to install, which disables offline support and push notifications.
 - **OAuth consent guidance** — additional explanatory copy on the authorization screen.
 
 ## Acknowledgements

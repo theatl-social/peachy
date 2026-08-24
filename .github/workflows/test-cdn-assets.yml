@@ -342,6 +342,41 @@ jobs:
       # - Emoji SVG source files: Live in public/emoji/ and are served statically by Rails/Nginx
       # - Custom emoji data (emoji_map.json): May be embedded in bundles or loaded separately
 
+      - name: Verify the build records the CDN host it was compiled against
+        run: |
+          echo "🔍 Checking public/packs/.vite/asset-base.json..."
+
+          # The running app compares this against its own CDN_HOST to detect a
+          # container built for one CDN but deployed with another. Nothing else
+          # in the build output carries the value: Vite's manifest stores output
+          # paths, not URLs, so it looks identical with and without a CDN.
+          recorded="public/packs/.vite/asset-base.json"
+
+          if [ ! -f "$recorded" ]; then
+            echo "❌ $recorded was not emitted."
+            echo "   RecordAssetBase() in config/vite/asset-base.ts should emit it."
+            exit 1
+          fi
+
+          cat "$recorded"
+
+          node -e "
+          const recorded = require('./public/packs/.vite/asset-base.json');
+          const expected = 'https://cdn-test.example.com';
+
+          if (recorded.cdnHost !== expected) {
+            console.error('❌ cdnHost was ' + JSON.stringify(recorded.cdnHost) + ', expected ' + expected);
+            console.error('   CDN_HOST was trailing-slashed for this job; it must be recorded normalised,');
+            console.error('   or the runtime mismatch check will fire on every boot.');
+            process.exit(1);
+          }
+          if (!recorded.base.startsWith(expected + '/packs/')) {
+            console.error('❌ base was ' + JSON.stringify(recorded.base));
+            process.exit(1);
+          }
+          console.log('✅ Recorded base: ' + recorded.base);
+          "
+
       - name: Verify CDN_HOST trailing slash is normalised
         run: |
           echo "🔍 Checking that a trailing-slashed CDN_HOST did not produce '//packs/'..."
