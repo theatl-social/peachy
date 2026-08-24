@@ -56,9 +56,15 @@ if [ "$want" != "$have" ]; then
   fi
 
   # Build output goes to stderr so callers can capture the image name on stdout.
+  # Pass .ruby-version through rather than relying on the literal default in
+  # Dockerfile.dev. That file is fork-only, so an upstream merge that bumps
+  # .ruby-version never conflicts with it and the pin silently falls behind --
+  # which is exactly what happened between 4.0.5 and 4.0.6. Deriving the value
+  # here means the same file that triggers the rebuild also decides its content.
   docker build \
     -f "$ROOT/Dockerfile.dev" \
     -t "$IMAGE_NAME" \
+    --build-arg "RUBY_VERSION=$(tr -d '[:space:]' < "$ROOT/.ruby-version")" \
     --label "$LABEL_KEY=$want" \
     "$ROOT" >&2
 fi

@@ -4,7 +4,11 @@
 # Build:  docker build -f Dockerfile.dev -t theconnector-dev .
 # Usage:  docker run --rm -v "$PWD:/app" -w /app theconnector-dev bin/rubocop -a <files>
 
-ARG RUBY_VERSION="4.0.5"
+# Kept in sync with .ruby-version by bin/dev-image, which passes it as a build
+# arg. The literal below is only a fallback for direct `docker build` calls;
+# it drifted to 4.0.5 behind .ruby-version once already, because this file is
+# fork-only and so never conflicts during an upstream merge.
+ARG RUBY_VERSION="4.0.6"
 
 FROM ruby:${RUBY_VERSION}-slim-trixie
 
