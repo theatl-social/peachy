@@ -2,6 +2,10 @@
 
 require 'rails_helper'
 
+# No other spec builds a temporary directory, so `tmpdir` is not necessarily
+# loaded by the time this file runs.
+require 'tmpdir'
+
 RSpec.describe CdnHostCheck do
   subject(:check) { described_class.new(env: env, public_path: public_path, rails_env: rails_env) }
 
