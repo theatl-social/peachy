@@ -85,6 +85,17 @@ RSpec.describe CdnHostCheck do
         end
       end
 
+      context 'when an older build recorded an unnormalised host' do
+        # Builds before the Vite side normalised this wrote the raw CDN_HOST,
+        # trailing slash and all. Comparing that against a normalised runtime
+        # value would report a host as mismatching itself on every boot.
+        before { record_built_host('https://cdn.example.com/') }
+
+        it 'does not report a host as mismatching itself' do
+          expect(check.warnings).to_not include(a_string_matching(/built against/))
+        end
+      end
+
       context 'when only a trailing slash differs' do
         let(:env) { { 'CDN_HOST' => 'https://cdn.example.com/' } }
 

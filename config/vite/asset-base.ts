@@ -18,12 +18,27 @@ export interface AssetBaseOptions {
   isProdBuild: boolean;
 }
 
+/* The single definition of what a normalised CDN host looks like. Both the base
+   and the value recorded for the runtime check must agree on this: if the
+   recorded host keeps a trailing slash the base has stripped, CdnHostCheck sees
+   a mismatch between a host and itself and warns on every boot. */
+export function normalizeCdnHost(
+  cdnHost: string | null | undefined,
+): string | null {
+  const host = cdnHost?.trim();
+
+  // Vite concatenates `base` with asset paths, so a trailing slash on CDN_HOST
+  // would yield `https://cdn.example.com//packs/`. Most CDNs serve that, but it
+  // breaks cache keys and any exact-match origin rule.
+  return host ? host.replace(/\/+$/, '') : null;
+}
+
 export function resolveAssetBase({
   cdnHost,
   outDirName,
   isProdBuild,
 }: AssetBaseOptions): string {
-  const host = cdnHost?.trim();
+  const host = normalizeCdnHost(cdnHost);
 
   // Only production builds emit absolute URLs. The dev server serves assets
   // itself, so a CDN base there would point at stale (or absent) files.
@@ -31,10 +46,7 @@ export function resolveAssetBase({
     return `/${outDirName}/`;
   }
 
-  // Vite concatenates `base` with asset paths, so a trailing slash on CDN_HOST
-  // would yield `https://cdn.example.com//packs/`. Most CDNs serve that, but it
-  // breaks cache keys and any exact-match origin rule.
-  return `${host.replace(/\/+$/, '')}/${outDirName}/`;
+  return `${host}/${outDirName}/`;
 }
 
 /* Record what the assets were actually compiled against, so the running app can

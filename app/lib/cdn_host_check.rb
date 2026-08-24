@@ -34,7 +34,11 @@ class CdnHostCheck
 
     @built_host = begin
       file = @public_path.join(MANIFEST_PATH)
-      JSON.parse(file.read)['cdnHost'].presence if file.exist?
+      # Normalised on read as well as on write. Images built before the build
+      # side normalised this recorded a trailing slash, and comparing that
+      # against a normalised runtime value would report a host as mismatching
+      # itself on every boot.
+      normalize(JSON.parse(file.read)['cdnHost']).presence if file.exist?
     rescue JSON::ParserError, SystemCallError
       # A truncated or unreadable file tells us nothing; it is not itself a
       # misconfiguration worth reporting, so fall back to "unknown".
@@ -74,6 +78,10 @@ class CdnHostCheck
   end
 
   def normalized_configured_host
-    configured_host.sub(%r{/+\z}, '')
+    normalize(configured_host)
+  end
+
+  def normalize(host)
+    host.to_s.strip.sub(%r{/+\z}, '')
   end
 end
