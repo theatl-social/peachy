@@ -640,3 +640,262 @@ jobs:
           fi
 
           echo "✅ Builds without CDN_HOST leave it unset"
+
+  test-cdn-booted-app:
+    name: Verify CDN_HOST against a booted app
+    runs-on: ubuntu-latest
+
+    # The only place the Content-Security-Policy can actually be checked.
+    # config/initializers/content_security_policy.rb reads assets_host into a
+    # local at boot and the policy block closes over it, so Rails builds one
+    # static policy per process. A request spec cannot vary it -- the value is
+    # already fixed by the time any example runs. Booting a container with
+    # CDN_HOST set is the only way to observe the CDN reaching script-src.
+    services:
+      postgres:
+        image: postgres:14-alpine
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_USER: postgres
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10ms
+          --health-timeout 3s
+          --health-retries 50
+        ports:
+          - 5432:5432
+
+      redis:
+        image: redis:7-alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10ms
+          --health-timeout 3s
+          --health-retries 50
+        ports:
+          - 6379:6379
+
+    env:
+      CDN_ORIGIN: http://127.0.0.1:8080
+      APP_ORIGIN: http://127.0.0.1:3000
+
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+
+      - name: Build the image against the stand-in CDN origin
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          build-args: |
+            CDN_HOST=${{ env.CDN_ORIGIN }}
+          push: false
+          load: true
+          tags: peachy-cdn-boot:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Serve the built assets as a stand-in CDN
+        run: |
+          # Assets are served from a *different origin* than the app, which is
+          # the whole point: it is what makes the CSP, the meta tag and the
+          # emitted asset URLs meaningful rather than incidentally same-origin.
+          container=$(docker create peachy-cdn-boot:latest)
+          docker cp "$container:/opt/mastodon/public" ./cdn-root
+          docker rm "$container" >/dev/null
+
+          test -d ./cdn-root/packs || { echo "❌ no packs directory in the image"; exit 1; }
+
+          # http.server sends no CORS headers, and the service worker is a module
+          # worker whose chunk imports are CORS-fetched, so a plain static server
+          # would not reproduce a usable CDN.
+          cat > cdn_server.py <<'PY'
+          import functools, http.server, socketserver
+
+          class Handler(http.server.SimpleHTTPRequestHandler):
+              def end_headers(self):
+                  self.send_header('Access-Control-Allow-Origin', '*')
+                  self.send_header('Cross-Origin-Resource-Policy', 'cross-origin')
+                  super().end_headers()
+
+          socketserver.TCPServer.allow_reuse_address = True
+          handler = functools.partial(Handler, directory='cdn-root')
+          with socketserver.ThreadingTCPServer(('127.0.0.1', 8080), handler) as httpd:
+              httpd.serve_forever()
+          PY
+
+          nohup python3 cdn_server.py > cdn-server.log 2>&1 &
+
+          for _ in $(seq 1 30); do
+            if curl -sf "$CDN_ORIGIN/packs/.vite/asset-base.json" >/dev/null; then
+              echo "✅ CDN serving on $CDN_ORIGIN"
+              curl -s "$CDN_ORIGIN/packs/.vite/asset-base.json"
+              exit 0
+            fi
+            sleep 1
+          done
+
+          echo "❌ stand-in CDN never came up"
+          cat cdn-server.log
+          exit 1
+
+      - name: Generate throwaway runtime secrets
+        run: |
+          # Required by config/initializers/active_record_encryption.rb, which
+          # aborts boot when they are absent. Generated per run and never reused.
+          {
+            echo "SECRET_KEY_BASE=$(openssl rand -hex 64)"
+            echo "OTP_SECRET=$(openssl rand -hex 64)"
+            echo "ACTIVE_RECORD_ENCRYPTION_PRIMARY_KEY=$(openssl rand -hex 32)"
+            echo "ACTIVE_RECORD_ENCRYPTION_DETERMINISTIC_KEY=$(openssl rand -hex 32)"
+            echo "ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT=$(openssl rand -hex 32)"
+          } > app.env
+
+          {
+            echo "RAILS_ENV=production"
+            # Must match the port curl reaches below: config.hosts is built
+            # from this, and a mismatch is a 403 rather than anything CDN-related.
+            echo "LOCAL_DOMAIN=127.0.0.1:3000"
+            echo "DB_HOST=127.0.0.1"
+            echo "DB_USER=postgres"
+            echo "DB_PASS=postgres"
+            echo "DB_NAME=mastodon_production"
+            echo "REDIS_URL=redis://127.0.0.1:6379"
+            echo "RAILS_SERVE_STATIC_FILES=true"
+          } >> app.env
+
+      - name: Prepare the database
+        run: |
+          docker run --rm --network host --env-file app.env \
+            -e CDN_HOST="$CDN_ORIGIN" \
+            peachy-cdn-boot:latest \
+            bundle exec rails db:prepare
+
+      - name: Boot the app
+        run: |
+          docker run -d --name peachy-app --network host --env-file app.env \
+            -e CDN_HOST="$CDN_ORIGIN" \
+            peachy-cdn-boot:latest \
+            bundle exec puma -C config/puma.rb
+
+          for _ in $(seq 1 60); do
+            if curl -sf "$APP_ORIGIN/health" | grep -q 'OK'; then
+              echo "✅ app healthy"
+              exit 0
+            fi
+            sleep 2
+          done
+
+          echo "❌ app never became healthy"
+          exit 1
+
+      - name: Assert the page advertises the CDN
+        run: |
+          # Two things this request has to get right, both of which fail in ways
+          # that look unrelated to the CDN:
+          #
+          # X-Forwarded-Proto: production sets config.force_ssl = true
+          # unconditionally, and config.ssl_options excludes only /health from the
+          # redirect. So the health poll above succeeds while a plain GET / returns
+          # 301 and yields no HTML at all. Real deployments sit behind a
+          # TLS-terminating proxy; this header is how the harness stands in for one.
+          #
+          # Host: config/initializers/1_hosts.rb builds config.hosts from
+          # LOCAL_DOMAIN, so the port reached here must match the LOCAL_DOMAIN set
+          # for the container, or Rails host authorization returns 403 before any
+          # of this is exercised. Both are pinned to 3000.
+          curl -sS -H 'X-Forwarded-Proto: https' "$APP_ORIGIN/" -o page.html -D headers.txt
+
+          if ! head -1 headers.txt | grep -q ' 200'; then
+            echo "❌ GET / did not return 200"
+            head -1 headers.txt
+            exit 1
+          fi
+
+          if ! grep -qF "content=\"$CDN_ORIGIN\"" page.html; then
+            echo "❌ <meta name=\"cdn-host\"> missing or wrong"
+            grep -i 'cdn-host' page.html || echo "   (no cdn-host meta tag at all)"
+            exit 1
+          fi
+          echo "✅ meta cdn-host present"
+
+      - name: Assert the CSP allows the CDN
+        run: |
+          csp=$(grep -i '^content-security-policy:' headers.txt || true)
+
+          if [ -z "$csp" ]; then
+            echo "❌ no Content-Security-Policy header"
+            exit 1
+          fi
+
+          for directive in script-src style-src font-src; do
+            value=$(printf '%s' "$csp" | tr ';' '\n' | grep " *$directive " || true)
+            case "$value" in
+              *"$CDN_ORIGIN"*) echo "✅ $directive allows the CDN" ;;
+              *)
+                echo "❌ $directive does not allow $CDN_ORIGIN"
+                echo "   $value"
+                echo ""
+                echo "Rails booted without CDN_HOST reaching config.asset_host, so the"
+                echo "browser would block the assets the build pointed at the CDN."
+                exit 1
+                ;;
+            esac
+          done
+
+      - name: Assert referenced assets actually load from the CDN
+        run: |
+          # The end-to-end claim: not "the string appears in a file" but "the page
+          # points at the CDN and the CDN serves it".
+          urls=$(grep -oE "$CDN_ORIGIN/packs/[^\"']+" page.html | sort -u | head -5)
+
+          if [ -z "$urls" ]; then
+            echo "❌ the page references no CDN asset URLs"
+            exit 1
+          fi
+
+          for url in $urls; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' "$url")
+            acao=$(curl -sI "$url" | grep -i '^access-control-allow-origin:' || true)
+
+            if [ "$code" != "200" ]; then
+              echo "❌ $url returned $code"
+              exit 1
+            fi
+            if [ -z "$acao" ]; then
+              echo "❌ $url is served without Access-Control-Allow-Origin"
+              echo "   The service worker is a module worker; its chunk imports are"
+              echo "   CORS-fetched, so it would fail to install against this CDN."
+              exit 1
+            fi
+            echo "  200 + CORS  $url"
+          done
+          echo "✅ referenced assets load from the CDN with CORS"
+
+      - name: Assert a mismatched CDN_HOST is reported at boot
+        run: |
+          # The image was compiled against $CDN_ORIGIN. Booting it with a
+          # different value is the skew CdnHostCheck exists to catch, and is
+          # exactly what happens when CDN_HOST is changed at deploy time without
+          # rebuilding.
+          docker run --rm --network host --env-file app.env \
+            -e CDN_HOST=http://127.0.0.1:9999 \
+            peachy-cdn-boot:latest \
+            bundle exec rails runner 'puts CdnHostCheck.new.warnings' > mismatch.log 2>&1 || true
+
+          cat mismatch.log
+
+          if ! grep -q 'built against' mismatch.log; then
+            echo "❌ no mismatch warning for a CDN_HOST the assets were not built with"
+            exit 1
+          fi
+          echo "✅ mismatch reported"
+
+      - name: Container logs
+        if: always()
+        run: |
+          echo "===== app ====="
+          docker logs peachy-app 2>&1 | tail -80 || true
+          echo "===== cdn ====="
+          tail -40 cdn-server.log || true
