@@ -507,39 +507,45 @@ jobs:
           Result: All Vite-managed assets load from CDN automatically ✨
           "
 
-  test-cdn-runtime-env:
-    name: Verify CDN_HOST reaches container runtime
+  test-cdn-image:
+    name: Verify CDN_HOST end to end in a built image
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
 
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
 
-      # The regression this guards against: CDN_HOST used to be declared as a
-      # build ARG and consumed during asset precompilation, but was never
-      # promoted into the runtime ENV block. The resulting image baked CDN URLs
-      # into CSS/JS while Rails booted with `config.asset_host` unset -- so the
-      # CSP never allow-listed the CDN and the browser blocked the very assets
-      # the build had redirected there.
+      # CDN_HOST is consumed at two points that cannot see each other: Vite bakes
+      # it into compiled CSS during asset precompilation, and the ENV block makes
+      # it available to Rails at boot for asset_host, the CSP allow-list and the
+      # <meta name="cdn-host"> tag. The original defect was the ENV half missing
+      # while the asset half worked, which no job checking one half alone would
+      # have caught.
       #
-      # Only the `ruby` stage is built: the ENV block lives there, and building
-      # the full image would cost many minutes for no extra coverage.
-      - name: Build the base stage with a CDN_HOST build arg
+      # So this builds the whole image rather than a stage, and asserts both
+      # halves in the same artifact. It is the slowest job here; the GitHub
+      # Actions cache keeps repeat runs to the layers that actually changed.
+      #
+      # The value is deliberately trailing-slashed: the recorded host must come
+      # back normalised while the raw value still reaches the runtime ENV, where
+      # Rails normalises on read.
+      - name: Build the full image with a CDN_HOST build arg
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: .
-          target: ruby
           build-args: |
-            CDN_HOST=https://cdn-test.example.com
+            CDN_HOST=https://cdn-test.example.com/
           push: false
           load: true
-          tags: peachy-cdn-env-check:latest
+          tags: peachy-cdn-e2e:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
-      - name: Assert CDN_HOST is present in the image environment
+      - name: Assert the runtime environment carries CDN_HOST
         run: |
-          echo "🔍 Inspecting runtime environment of the built image..."
+          echo "🔍 Inspecting the runtime environment of the built image..."
 
-          env_value=$(docker image inspect peachy-cdn-env-check:latest \
+          env_value=$(docker image inspect peachy-cdn-e2e:latest \
             --format '{{range .Config.Env}}{{println .}}{{end}}' \
             | grep '^CDN_HOST=' || true)
 
@@ -550,28 +556,79 @@ jobs:
             echo "it to a runtime ENV. Rails reads ENV['CDN_HOST'] at boot to set"
             echo "config.asset_host, which drives the CSP allow-list and the"
             echo "<meta name=\"cdn-host\"> tag. Without it the CDN is only half"
-            echo "applied and the browser will block CDN-hosted assets."
+            echo "applied and the browser blocks the assets the build redirected."
             echo ""
             echo "Fix: add CDN_HOST=\"\${CDN_HOST}\" to the ENV block in Dockerfile."
             exit 1
           fi
 
           echo "   $env_value"
+          echo "✅ CDN_HOST reaches the container runtime"
 
-          if [ "$env_value" != "CDN_HOST=https://cdn-test.example.com" ]; then
-            echo "❌ CDN_HOST did not carry the build-arg value through."
+      - name: Assert the build recorded the CDN host, normalised
+        run: |
+          echo "🔍 Reading the recorded asset base out of the image..."
+
+          docker run --rm --entrypoint cat peachy-cdn-e2e:latest \
+            /opt/mastodon/public/packs/.vite/asset-base.json > asset-base.json
+
+          cat asset-base.json
+
+          node -e "
+          const recorded = require('./asset-base.json');
+          const expected = 'https://cdn-test.example.com';
+
+          // CdnHostCheck compares this against the running CDN_HOST. If the two
+          // normalise differently the app reports a host as mismatching itself
+          // on every boot.
+          if (recorded.cdnHost !== expected) {
+            console.error('❌ cdnHost was ' + JSON.stringify(recorded.cdnHost) + ', expected ' + expected);
+            process.exit(1);
+          }
+          if (recorded.base !== expected + '/packs/') {
+            console.error('❌ base was ' + JSON.stringify(recorded.base));
+            process.exit(1);
+          }
+          console.log('✅ Recorded base: ' + recorded.base);
+          "
+
+      - name: Assert compiled CSS points at the CDN
+        run: |
+          echo "🔍 Checking compiled CSS inside the image for CDN URLs..."
+
+          # The asset half of CDN_HOST. Unlike JS, which resolves relative to
+          # import.meta.url at runtime, CSS url() values are absolute and fixed
+          # at build time, so this is what actually proves the base was applied.
+          found=$(docker run --rm --entrypoint sh peachy-cdn-e2e:latest -c \
+            "grep -rhoE 'url\(https://cdn-test\.example\.com/packs/[^)]*' \
+               /opt/mastodon/public/packs --include='*.css' 2>/dev/null | head -3" || true)
+
+          if [ -z "$found" ]; then
+            echo "❌ No CDN URLs found in compiled CSS."
+            echo "   resolveAssetBase() did not reach the asset build, so styles"
+            echo "   and fonts would be fetched from the origin instead."
             exit 1
           fi
 
-          echo "✅ CDN_HOST reaches the container runtime"
+          echo "$found"
+
+          if docker run --rm --entrypoint sh peachy-cdn-e2e:latest -c \
+            "grep -rq 'cdn-test\.example\.com//packs' /opt/mastodon/public/packs --include='*.css' 2>/dev/null"; then
+            echo "❌ Found a doubled slash after the CDN host in compiled CSS."
+            exit 1
+          fi
+
+          echo "✅ Compiled CSS points at the CDN, with no doubled slash"
 
       - name: Assert an unset CDN_HOST stays empty
         run: |
           echo "🔍 Verifying backward compatibility (no CDN_HOST build arg)..."
 
-          docker build --target ruby -t peachy-cdn-env-default:latest . >/dev/null
+          # Only the `ruby` stage: the ENV block lives there, and the negative
+          # case needs no assets, so there is nothing to gain from a full build.
+          docker build --target ruby -t peachy-cdn-default:latest . >/dev/null
 
-          env_value=$(docker image inspect peachy-cdn-env-default:latest \
+          env_value=$(docker image inspect peachy-cdn-default:latest \
             --format '{{range .Config.Env}}{{println .}}{{end}}' \
             | grep '^CDN_HOST=' || true)
 
