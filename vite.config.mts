@@ -19,7 +19,7 @@ import {
 import manifestSRI from 'vite-plugin-manifest-sri';
 import svgr from 'vite-plugin-svgr';
 
-import { resolveAssetBase } from './config/vite/asset-base';
+import { RecordAssetBase, resolveAssetBase } from './config/vite/asset-base';
 import { MastodonAssetsManifest } from './config/vite/plugin-assets-manifest';
 import { MastodonThemes } from './config/vite/plugin-mastodon-themes';
 import { MastodonServiceWorkerChunkPaths } from './config/vite/plugin-sw-chunk-paths';
@@ -41,8 +41,9 @@ export const config: UserConfigFnPromise = async ({ mode, command }) => {
   // Support CDN_HOST for production builds, so all Vite-generated asset URLs
   // (CSS `url()`, chunk imports, the manifest) point at the CDN. See
   // `config/vite/asset-base.ts` for why this is not the whole story.
+  const cdnHost = process.env.CDN_HOST?.trim() || null;
   const base = resolveAssetBase({
-    cdnHost: process.env.CDN_HOST,
+    cdnHost,
     outDirName,
     isProdBuild,
   });
@@ -196,6 +197,7 @@ export const config: UserConfigFnPromise = async ({ mode, command }) => {
       formatjs(),
       MastodonThemes(),
       MastodonAssetsManifest(),
+      RecordAssetBase({ base, cdnHost: isProdBuild ? cdnHost : null }),
       MastodonServiceWorkerLocales(),
       MastodonServiceWorkerChunkPaths(),
       legacy({

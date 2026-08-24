@@ -10,8 +10,10 @@
    driven separately from `ENV['CDN_HOST']` at boot. Both must be set to the
    same value for a CDN deploy to be coherent. */
 
+import type { Plugin } from 'vite';
+
 export interface AssetBaseOptions {
-  cdnHost: string | undefined;
+  cdnHost: string | null | undefined;
   outDirName: string;
   isProdBuild: boolean;
 }
@@ -33,4 +35,39 @@ export function resolveAssetBase({
   // would yield `https://cdn.example.com//packs/`. Most CDNs serve that, but it
   // breaks cache keys and any exact-match origin rule.
   return `${host.replace(/\/+$/, '')}/${outDirName}/`;
+}
+
+/* Record what the assets were actually compiled against, so the running app can
+   notice when its own CDN_HOST disagrees.
+
+   Nothing else in the build output carries this. Vite's manifest stores output
+   paths relative to the out dir, not URLs, so it looks identical whether or not
+   a CDN was configured; only compiled CSS `url()` values embed the host, and
+   parsing those at boot would be both slow and brittle. A single small file is
+   cheaper and unambiguous. */
+
+const ASSET_BASE_FILENAME = '.vite/asset-base.json';
+
+export interface RecordedAssetBase {
+  base: string;
+  cdnHost: string | null;
+}
+
+export function RecordAssetBase(recorded: RecordedAssetBase): Plugin {
+  return {
+    name: 'mastodon-record-asset-base',
+    apply: 'build',
+    applyToEnvironment(environment) {
+      // Emit only alongside the manifest, so this runs once rather than for
+      // every build environment. Mirrors MastodonAssetsManifest.
+      return !!environment.config.build.manifest;
+    },
+    generateBundle() {
+      this.emitFile({
+        fileName: ASSET_BASE_FILENAME,
+        type: 'asset',
+        source: `${JSON.stringify(recorded, null, 2)}\n`,
+      });
+    },
+  };
 }
