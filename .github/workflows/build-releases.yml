@@ -1,4 +1,17 @@
 name: Build container release images
+
+# Disabled in this fork. Upstream publishes its release images from here, but
+# `push_to_images` below targets tootsuite/mastodon and ghcr.io/mastodon/mastodon
+# — registries theatl-social/peachy cannot write to. A tag push therefore yields a
+# failed run and nothing else; see the run for v4.6.4-peachy-20260728, the only
+# time this fired before it was disabled in the Actions UI.
+#
+# peachy's images come from private-build-compiled-mastodon.yml, which triggers on
+# push to main rather than on tags, so nothing here is load-bearing for a release.
+#
+# Guarded per-job with the same `github.repository` check upstream already uses in
+# build-nightly.yml, rather than deleting the file, so it keeps merging cleanly
+# from upstream and the reason stays recorded next to the thing it disables.
 on:
   push:
     tags:
@@ -11,6 +24,7 @@ permissions:
 jobs:
   check-latest-stable:
     runs-on: ubuntu-latest
+    if: github.repository == 'mastodon/mastodon'
     outputs:
       latest: ${{ steps.check.outputs.is_latest_stable }}
     steps:
@@ -47,6 +61,7 @@ jobs:
 
   build-image:
     needs: check-latest-stable
+    if: github.repository == 'mastodon/mastodon'
     uses: ./.github/workflows/build-container-image.yml
     with:
       file_to_build: Dockerfile
@@ -66,6 +81,7 @@ jobs:
 
   build-image-streaming:
     needs: check-latest-stable
+    if: github.repository == 'mastodon/mastodon'
     uses: ./.github/workflows/build-container-image.yml
     with:
       file_to_build: streaming/Dockerfile
