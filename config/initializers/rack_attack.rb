@@ -62,7 +62,8 @@ class Rack::Attack
     end
 
     def normalized_email
-      CanonicalEmailBlock.canonicalize_email(params.dig('user', 'email')) if params.dig('user', 'email').present?
+      email = params.dig('user', 'email')
+      CanonicalEmailBlock.canonicalize_email(email) if email.is_a?(String) && email.present?
     end
   end
 

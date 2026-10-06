@@ -516,7 +516,7 @@ table + p {
     text-decoration: underline;
   }
 
-  &:not(last-child) {
+  &:not(:last-child) {
     margin-bottom: 12px;
   }
 }
