@@ -143,7 +143,7 @@ class Api::V1::AccountsController < Api::BaseController
       return
     end
 
-    forbidden unless allowed_registration?(request.remote_ip, invite)
+    forbidden if ENV['SSO_ACCOUNT_SIGN_UP'].present? || !allowed_registration?(request.remote_ip, invite)
   end
 
   def api_registrations_disabled?

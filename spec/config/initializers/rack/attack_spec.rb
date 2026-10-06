@@ -71,6 +71,57 @@ RSpec.describe Rack::Attack, type: :request do
   let(:remote_ip) { '1.2.3.5' }
   let(:discriminator) { remote_ip }
 
+  describe 'normalizing email addresses' do
+    subject(:normalized_email) do
+      env = Rack::MockRequest.env_for('/auth/confirmation', method: 'POST', params: { user: { email: email } })
+      described_class::Request.new(env).normalized_email
+    end
+
+    context 'with a string email' do
+      let(:email) { 'F.O.O+tag@BAR.COM' }
+
+      it 'uses the canonical address' do
+        expect(normalized_email).to eq('foo@bar.com')
+      end
+    end
+
+    context 'with a blank email' do
+      let(:email) { '' }
+
+      it 'has no email discriminator' do
+        expect(normalized_email).to be_nil
+      end
+    end
+
+    context 'with an array email' do
+      let(:email) { ['foo@bar.com'] }
+
+      it 'has no email discriminator' do
+        expect(normalized_email).to be_nil
+      end
+    end
+
+    context 'with a hash email' do
+      let(:email) { { address: 'foo@bar.com' } }
+
+      it 'has no email discriminator' do
+        expect(normalized_email).to be_nil
+      end
+    end
+  end
+
+  describe 'throttle excessive confirmation e-mail requests by e-mail address' do
+    let(:throttle) { 'throttle_email_confirmations/email' }
+    let(:limit) { 5 }
+    let(:period) { 30.minutes }
+    let(:request) { -> { post path, params: { user: { email: email } } } }
+    let(:path) { '/auth/confirmation' }
+    let(:email) { 'foo@bar.com' }
+    let(:discriminator) { email }
+
+    it_behaves_like 'throttled endpoint'
+  end
+
   describe 'throttle excessive sign-up requests by IP address' do
     context 'when accessed through the website' do
       let(:throttle) { 'throttle_sign_up_attempts/ip' }

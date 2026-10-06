@@ -60,6 +60,11 @@ class Rack::Attack
     def paging_request?
       params['page'].present? || params['min_id'].present? || params['max_id'].present? || params['since_id'].present?
     end
+
+    def normalized_email
+      email = params.dig('user', 'email')
+      CanonicalEmailBlock.canonicalize_email(email) if email.is_a?(String) && email.present?
+    end
   end
 
   Rack::Attack.blocklist('deny from blocklist') do |req|
@@ -118,7 +123,7 @@ class Rack::Attack
   end
 
   throttle('throttle_password_resets/email', limit: ENV['THROTTLE_PASSWORD_RESETS_EMAIL_LIMIT']&.to_i || 5, period: (ENV['THROTTLE_PASSWORD_RESETS_EMAIL_PERIOD_MINUTES']&.to_i || 30).minutes) do |req|
-    req.params.dig('user', 'email').presence if req.post? && req.path_matches?('/auth/password')
+    req.normalized_email if req.post? && req.path_matches?('/auth/password')
   end
 
   throttle('throttle_email_confirmations/ip', limit: ENV['THROTTLE_EMAIL_CONFIRMATIONS_IP_LIMIT']&.to_i || 25, period: (ENV['THROTTLE_EMAIL_CONFIRMATIONS_IP_PERIOD_MINUTES']&.to_i || 5).minutes) do |req|
@@ -127,14 +132,14 @@ class Rack::Attack
 
   throttle('throttle_email_confirmations/email', limit: ENV['THROTTLE_EMAIL_CONFIRMATIONS_EMAIL_LIMIT']&.to_i || 5, period: (ENV['THROTTLE_EMAIL_CONFIRMATIONS_EMAIL_PERIOD_MINUTES']&.to_i || 30).minutes) do |req|
     if req.post? && req.path_matches?('/auth/confirmation')
-      req.params.dig('user', 'email').presence
+      req.normalized_email
     elsif req.post? && req.path == '/api/v1/emails/confirmations'
       req.authenticated_user_id
     end
   end
 
   throttle('throttle_auth_setup/email', limit: 5, period: 10.minutes) do |req|
-    req.params.dig('user', 'email').presence if (req.put? || req.patch?) && req.path_matches?('/auth/setup')
+    req.normalized_email if (req.put? || req.patch?) && req.path_matches?('/auth/setup')
   end
 
   throttle('throttle_auth_setup/account', limit: 5, period: 10.minutes) do |req|
@@ -146,7 +151,7 @@ class Rack::Attack
   end
 
   throttle('throttle_login_attempts/email', limit: ENV['THROTTLE_LOGIN_ATTEMPTS_EMAIL_LIMIT']&.to_i || 25, period: (ENV['THROTTLE_LOGIN_ATTEMPTS_EMAIL_PERIOD_MINUTES']&.to_i || 60).minutes) do |req|
-    req.session[:attempt_user_id] || req.params.dig('user', 'email').presence if req.post? && req.path_matches?('/auth/sign_in')
+    req.session[:attempt_user_id] || req.normalized_email if req.post? && req.path_matches?('/auth/sign_in')
   end
 
   throttle('throttle_password_change/account', limit: ENV['THROTTLE_PASSWORD_CHANGE_ACCOUNT_LIMIT']&.to_i || 10, period: (ENV['THROTTLE_PASSWORD_CHANGE_ACCOUNT_PERIOD_MINUTES']&.to_i || 10).minutes) do |req|

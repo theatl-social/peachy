@@ -16,6 +16,15 @@ RSpec.describe 'Settings Deletes' do
           .to have_http_status(400)
       end
 
+      it 'rejects a missing username without deleting the account' do
+        expect do
+          delete settings_delete_path, params: { form_delete_confirmation: { password: user.password } }
+        end.to(not_change { user.account.reload.requested_deletion_at })
+
+        expect(response).to redirect_to(settings_delete_path)
+        expect(flash[:alert]).to eq(I18n.t('deletes.challenge_not_passed'))
+      end
+
       context 'when suspended' do
         let(:user) { Fabricate(:user, account_attributes: { suspended_at: Time.now.utc }) }
 
