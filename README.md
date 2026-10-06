@@ -1,6 +1,6 @@
 # peachy
 
-**peachy** is a soft fork of [Mastodon](https://github.com/mastodon/mastodon) that tracks upstream releases closely and layers on a small set of deployment-oriented options. It currently follows upstream **v4.6.3**.
+**peachy** is a soft fork of [Mastodon](https://github.com/mastodon/mastodon) that tracks upstream releases closely and layers on a small set of deployment-oriented options. It currently follows upstream **v4.7.3**.
 
 The goal is to stay as close to `mastodon/mastodon` as possible: every customization is opt-in via an environment variable and falls back to stock Mastodon behavior when unset, which keeps upstream merges cheap.
 

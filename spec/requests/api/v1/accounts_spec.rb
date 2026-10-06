@@ -233,6 +233,39 @@ RSpec.describe '/api/v1/accounts' do
       end
     end
 
+    context 'when SSO account sign-up is enabled' do
+      before do
+        allow(ENV).to receive(:[]).and_call_original
+        allow(ENV).to receive(:[]).with('SSO_ACCOUNT_SIGN_UP').and_return('true')
+        allow(ENV).to receive(:[]).with('TRUSTED_REGISTRATION_CLIENT_IDS').and_return(nil)
+      end
+
+      let(:agreement) { 'true' }
+
+      it 'rejects public API registration without creating a user' do
+        expect { subject }
+          .to not_change(User, :count)
+          .and not_change(Account, :count)
+
+        expect(response).to have_http_status(403)
+      end
+
+      context 'when app is in trusted list' do
+        before do
+          allow(ENV).to receive(:[]).with('TRUSTED_REGISTRATION_CLIENT_IDS').and_return(client_app.uid)
+        end
+
+        it 'preserves trusted registration' do
+          expect { subject }
+            .to change(User, :count).by(1)
+            .and change(Account, :count).by(1)
+
+          expect(response).to have_http_status(200)
+          expect(response.parsed_body[:access_token]).to be_present
+        end
+      end
+    end
+
     context 'when API registrations are disabled' do
       before do
         allow(ENV).to receive(:[]).and_call_original
