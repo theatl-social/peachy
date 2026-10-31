@@ -5,6 +5,7 @@ import { Link } from 'react-router-dom';
 import {
   domain,
   version,
+  peachy_version,
   source_url,
   statusPageUrl,
   profile_directory as canProfileDirectory,
@@ -117,6 +118,22 @@ export const LinkFooter: React.FC<{
           <li className={classes.version}>v{version}</li>
         </ul>
       </section>
+      {peachy_version && (
+        <section>
+          <h2 className={classes.heading}>Peachy:</h2>
+          <ul className={classes.list}>
+            <li className={classes.version}>v{peachy_version}</li>
+            <li>
+              <a href='https://github.com/theatl-social/peachy' rel='noopener' target='_blank'>
+                <FormattedMessage
+                  id='footer.source_code'
+                  defaultMessage='View source code'
+                />
+              </a>
+            </li>
+          </ul>
+        </section>
+      )}
     </footer>
   );
 };
