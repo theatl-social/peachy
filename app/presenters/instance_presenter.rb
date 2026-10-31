@@ -2,7 +2,7 @@
 
 class InstancePresenter < ActiveModelSerializers::Model
   attributes :domain, :title, :version, :source_url,
-             :description, :languages, :rules, :contact
+             :description, :languages, :rules, :contact, :peachy_version
 
   class ContactPresenter < ActiveModelSerializers::Model
     attributes :email, :account
@@ -68,6 +68,10 @@ class InstancePresenter < ActiveModelSerializers::Model
 
   def version
     Mastodon::Version.to_s
+  end
+
+  def peachy_version
+    Peachy::Version.to_s if ENV['PEACHY_FOOTER'] == 'true'
   end
 
   def source_url

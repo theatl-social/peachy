@@ -12,7 +12,7 @@ Upstream Mastodon is tracked as the `upstream` git remote:
 git remote add upstream https://github.com/mastodon/mastodon.git
 ```
 
-Releases are merged from upstream tags; the fork's version string carries a `-peachy-<date>` prerelease suffix.
+Releases are merged from upstream tags; the fork's version string matches upstream. Peachy's own version is shown separately in the footer.
 
 ## What peachy changes
 
@@ -25,6 +25,7 @@ Opt-in via environment variables (unset = upstream default):
   - **It must be set at both build and run time, to the same value.** Vite bakes it into compiled CSS during asset precompilation, while Rails reads it at boot for `asset_host`, the CSP allow-list and the `<meta name="cdn-host">` tag. The container image carries the build value forward as an `ENV`, so a plain `docker build --build-arg CDN_HOST=…` is coherent; overriding it with `docker run -e CDN_HOST=…` is not, and will leave CSS pointing at the origin it was compiled against while the CSP allows only the new one.
   - **The CDN must send `Access-Control-Allow-Origin` for the asset path.** The service worker is registered as a module worker, so its chunk imports are fetched with CORS. Without the header the worker fails to install, which disables offline support and push notifications.
 - **OAuth consent guidance** — additional explanatory copy on the authorization screen.
+- **Peachy footer** — `PEACHY_FOOTER=true` shows a Peachy version and source link section in the footer.
 
 ## Acknowledgements
 

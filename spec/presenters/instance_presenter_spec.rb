@@ -64,6 +64,32 @@ RSpec.describe InstancePresenter do
     end
   end
 
+  describe '#peachy_version' do
+    context 'with the PEACHY_FOOTER env variable set to true' do
+      around do |example|
+        ClimateControl.modify PEACHY_FOOTER: 'true' do
+          example.run
+        end
+      end
+
+      it 'returns the peachy version' do
+        expect(instance_presenter.peachy_version).to eq(Peachy::Version.to_s)
+      end
+    end
+
+    context 'without the PEACHY_FOOTER env variable set' do
+      around do |example|
+        ClimateControl.modify PEACHY_FOOTER: nil do
+          example.run
+        end
+      end
+
+      it 'returns nil' do
+        expect(instance_presenter.peachy_version).to be_nil
+      end
+    end
+  end
+
   describe '#source_url' do
     context 'with the GITHUB_REPOSITORY env variable set' do
       around do |example|
