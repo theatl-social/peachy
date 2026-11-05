@@ -171,9 +171,11 @@ jobs:
 
           # Find a CSS file that actually contains url() references (like fonts/images)
           # Not all CSS files have asset references - CSS modules often just have rules
+          # Inline data: URIs and #fragment references never get a CDN prefix, so a
+          # file containing only those proves nothing and must not be selected.
           css_file=""
           for f in $css_files; do
-            if grep -q 'url(' "$f" 2>/dev/null; then
+            if grep -oE "url\(['\"]?[^'\")]*" "$f" 2>/dev/null | grep -qvE "^url\(['\"]?(data:|#)"; then
               css_file="$f"
               break
             fi
