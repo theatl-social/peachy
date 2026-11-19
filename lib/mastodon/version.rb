@@ -13,11 +13,11 @@ module Mastodon
     end
 
     def patch
-      5
+      6
     end
 
     def default_prerelease
-      'peachy-20261104'
+      'peachy-20261119'
     end
 
     def prerelease
